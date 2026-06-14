@@ -4,6 +4,11 @@
 source-of-truth spec, shipped with the forgecore contract package. Draft
 history lives at `~/agent_dev/forge-sim-engine/specs/2026-06-11-engine-spec.md`.
 
+**Engine core COMPLETE (2026-06-13):** all six contracts (§2–§6) plus the
+kernel (§7) are shipped in forgecore. What remains is *adoption*, not contract:
+decorating the real solver entry points (§4 rollout), the conformance kit (§9),
+the Ring-2 bridge ports, and the first EventLog consumer.
+
 ---
 
 ## 1. What the engine is
@@ -23,7 +28,7 @@ Unreal's architecture, distilled to the five ideas that transfer:
 | **Core module** | Zero-dep base everything links against; strict one-way dependency layers | forgecore (428 LOC, pure stdlib) | EXISTS |
 | **UObject reflection + class registry** | Every class self-registers metadata at startup; editor, serialization, GC all read the registry | `ResultMixin.__init_subclass__` → `result_registry()` | EXISTS (results only — solvers missing) |
 | **World / Actors** | The typed scene graph all subsystems read | `Scene` / `Node` / `Edge` | EXISTS |
-| **Subsystems** | Self-registering services discovered by the registry, driven by a thin engine loop | `solver` decorator → `solver_registry()` / `solvers_for()` | EXISTS (registry shipped 2026-06-13; entry-point rollout pending) |
+| **Subsystems** | Self-registering services discovered by the registry, driven by a thin engine loop | `solver` decorator → `solver_registry()` / `solvers_for()` + `kernel.run/render/describe` | EXISTS (registry + kernel shipped 2026-06-13; entry-point rollout pending) |
 | **RHI (Render Hardware Interface)** | Neutral command stream; per-backend renderers consume it | `ChartSpec` (+ roles, spec_version) | EXISTS |
 | **Unreal Insights / Trace** | Channelized event stream recorded during the run; replay, profiling, analysis built on it | `EventLog` / `Event` (was "Trace") | EXISTS (DES witness; first consumer pending) |
 
@@ -243,7 +248,7 @@ Ring-2 work can't drift past it; implementation lands after Ring-2.**
 
 ---
 
-## 7. Kernel — centralized routing (NEW)
+## 7. Kernel — centralized routing (SHIPPED 2026-06-13)
 
 The engine's "game loop," sized honestly: discovery + routing only, no math.
 
@@ -320,6 +325,8 @@ because everything registers, everything is checkable.
    ✓ registry contract SHIPPED 2026-06-13 (`forgecore/solver.py`); decorating
    the entry points across the solver repos is the remaining rollout.
 5. **Kernel** + `describe()`; SVEND canvas + router migration become possible.
+   ✓ SHIPPED 2026-06-13 (`forgecore/kernel.py`: run / render / describe /
+   solvers_for). SVEND canvas routing + router.py attrition now unblocked.
 6. **Conformance kit**; swap per-repo drift-guards for it.
 7. **EventLog consumer** (post-Ring-2, per standing decision): the EventLog
    contract + DES witness shipped 2026-06-12; first consumer = animation layer
