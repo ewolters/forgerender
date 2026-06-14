@@ -32,6 +32,7 @@ from .dialect import (
     speaks,
 )
 from .solver import SolverInfo, solver, solver_registry, solvers_for
+from .kernel import describe, render, run
 
 __version__ = "0.1.0"
 
@@ -64,6 +65,9 @@ __all__ = [
     "solver",
     "solver_registry",
     "solvers_for",
+    "run",
+    "render",
+    "describe",
     "Scene",
     "Node",
     "Edge",
