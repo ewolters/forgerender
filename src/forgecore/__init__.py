@@ -31,6 +31,7 @@ from .dialect import (
     result_registry,
     speaks,
 )
+from .solver import SolverInfo, solver, solver_registry, solvers_for
 
 __version__ = "0.1.0"
 
@@ -59,6 +60,10 @@ __all__ = [
     "ResultMixin",
     "result_registry",
     "speaks",
+    "SolverInfo",
+    "solver",
+    "solver_registry",
+    "solvers_for",
     "Scene",
     "Node",
     "Edge",
