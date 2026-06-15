@@ -33,6 +33,15 @@ from .dialect import (
 )
 from .solver import SolverInfo, solver, solver_registry, solvers_for
 from .kernel import describe, render, run
+from .process import (
+    VALUE_ADDING,
+    Operation,
+    ProcessModel,
+    Product,
+    Resource,
+    Step,
+    StepKind,
+)
 
 __version__ = "0.1.0"
 
@@ -68,6 +77,13 @@ __all__ = [
     "run",
     "render",
     "describe",
+    "StepKind",
+    "VALUE_ADDING",
+    "Operation",
+    "Step",
+    "Product",
+    "Resource",
+    "ProcessModel",
     "Scene",
     "Node",
     "Edge",
