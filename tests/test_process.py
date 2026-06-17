@@ -153,6 +153,42 @@ def test_operation_resource_and_pool_reach_the_scene():
     assert scene.meta["resources"] == {"ops": 2}
 
 
+def test_operation_setup_matrix_reaches_station_changeover_attr():
+    # sequence-dependent setup is the matrix form of Operation.setup_time_s; it
+    # rides the operation and lands on the station node where the DES reads it.
+    matrix = {"A": {"B": 100.0}, "B": {"A": 20.0}}
+    model = ProcessModel(
+        steps=[Step(id="cut", kind=StepKind.PROCESSING,
+                    operation=Operation(cycle_time_s=40, setup_matrix=matrix))],
+        products=[Product(id="A", demand_per_day=100)],
+    )
+    scene = model.to_scene()
+    assert scene.node("cut").attrs["changeover_matrix"] == matrix
+
+
+def test_product_sequence_reaches_source_attr():
+    # the emission order is a model-level schedule (like available_s_per_day);
+    # it lands on the source node where the DES reads it as product_sequence.
+    model = ProcessModel(
+        steps=[Step(id="cut", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=40))],
+        products=[Product(id="A", demand_per_day=100), Product(id="B", demand_per_day=100)],
+        product_sequence=["A", "B"],
+    )
+    scene = model.to_scene()
+    assert scene.node("__source__").attrs["product_sequence"] == ["A", "B"]
+
+
+def test_no_setup_matrix_or_sequence_leaves_clean_scene():
+    # backward compatible: a single-line model emits neither token
+    model = ProcessModel(
+        steps=[Step(id="cut", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=40))],
+        products=[Product(id="A", demand_per_day=100)],
+    )
+    scene = model.to_scene()
+    assert "changeover_matrix" not in scene.node("cut").attrs
+    assert "product_sequence" not in scene.node("__source__").attrs
+
+
 def test_empty_route_visits_all_steps_in_order():
     # a product with no explicit route falls back to the declared step order
     model = ProcessModel(

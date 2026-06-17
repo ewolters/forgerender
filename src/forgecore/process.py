@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from .scene import Edge, Node, Scene
 
@@ -57,6 +57,7 @@ class Operation:
     cycle_time_s: float = 0.0
     cycle_time_cv: float = 0.0  # variability; 0 = deterministic
     setup_time_s: float = 0.0  # changeover, paid on a product switch
+    setup_matrix: dict = field(default_factory=dict)  # {from_product: {to_product: s}}, overrides flat per pair
     scrap_fraction: float = 0.0  # 0-1
     mtbf_s: float = 0.0  # mean time between failures; 0 = never fails
     mttr_s: float = 0.0  # mean time to repair
@@ -111,6 +112,7 @@ class ProcessModel:
     steps: list[Step] = field(default_factory=list)
     products: list[Product] = field(default_factory=list)
     resources: list[Resource] = field(default_factory=list)
+    product_sequence: list[str] = field(default_factory=list)  # emission order (repeating); empty = single type
     available_s_per_day: float = 28800.0  # 8h shift
     name: str = ""
 
@@ -130,8 +132,11 @@ class ProcessModel:
 
         demand = self.total_demand_per_day()
         interarrival = self.available_s_per_day / demand if demand > 0 else 0.0
+        source_attrs: dict[str, Any] = {"interarrival_time": interarrival}
+        if self.product_sequence:  # emission order drives typed arrivals + changeover
+            source_attrs["product_sequence"] = self.product_sequence
         nodes.append(Node(id="__source__", name="Customer Demand", kind="source",
-                          attrs={"interarrival_time": interarrival}))
+                          attrs=source_attrs))
 
         # Stations are a shared pool — each operation step becomes one node,
         # however many products route through it.
@@ -139,19 +144,22 @@ class ProcessModel:
         for step in self.steps:
             if step.kind in _OPERATION_KINDS:
                 op = step.operation or Operation()
+                station_attrs: dict[str, Any] = {
+                    "step_kind": step.kind.value,
+                    "cycle_time": op.cycle_time_s,
+                    "cycle_time_cv": op.cycle_time_cv,
+                    "changeover_time": op.setup_time_s,
+                    "scrap_rate": op.scrap_fraction,
+                    "mtbf": op.mtbf_s,
+                    "mttr": op.mttr_s,
+                    "operators": op.capacity,
+                    "resource": op.resource,
+                }
+                if op.setup_matrix:  # sequence-dependent setup overrides the flat time per pair
+                    station_attrs["changeover_matrix"] = op.setup_matrix
                 nodes.append(Node(
                     id=step.id, name=step.name or step.id, kind="station",
-                    attrs={
-                        "step_kind": step.kind.value,
-                        "cycle_time": op.cycle_time_s,
-                        "cycle_time_cv": op.cycle_time_cv,
-                        "changeover_time": op.setup_time_s,
-                        "scrap_rate": op.scrap_fraction,
-                        "mtbf": op.mtbf_s,
-                        "mttr": op.mttr_s,
-                        "operators": op.capacity,
-                        "resource": op.resource,
-                    },
+                    attrs=station_attrs,
                 ))
         nodes.append(Node(id="__sink__", name="Shipping", kind="sink"))
 
