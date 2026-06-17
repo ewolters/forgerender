@@ -73,6 +73,20 @@ def test_delay_step_becomes_edge_attr_between_operations():
     assert edge.attrs["delay_s"] == 600
 
 
+def test_transport_edge_carries_trip_count_from_demand():
+    scene = _line().to_scene()
+    # every unit traverses every edge once, so trips/day == total demand
+    edge = next(e for e in scene.edges if e.from_id == "cnc" and e.to_id == "weld")
+    assert edge.attrs["frequency"] == 222
+
+
+def test_non_transport_edge_has_no_trip_count():
+    scene = _line().to_scene()
+    # weld -> insp carries delay, not transport: no motion, so no trip-count
+    edge = next(e for e in scene.edges if e.from_id == "weld" and e.to_id == "insp")
+    assert "frequency" not in edge.attrs
+
+
 def test_demand_sets_source_interarrival_time():
     scene = _line().to_scene()
     src = next(n for n in scene.nodes if n.kind == "source")

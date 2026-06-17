@@ -131,6 +131,15 @@ class ProcessModel:
         prev_id = "__source__"
         pending: dict = {}  # transport/delay phenomena accumulating onto the next edge
 
+        def edge_attrs(p: dict) -> dict:
+            # A transport edge carries a trip-count: in a single route every unit
+            # traverses it once, so trips/day == demand. Movement-waste (the motion
+            # layer) is frequency x distance; without this it renders zero.
+            attrs = dict(p)
+            if attrs.get("distance_m", 0.0) > 0:
+                attrs["frequency"] = demand
+            return attrs
+
         for step in self.steps:
             if step.kind in _OPERATION_KINDS:
                 op = step.operation or Operation()
@@ -146,7 +155,7 @@ class ProcessModel:
                 }
                 nodes.append(Node(id=step.id, name=step.name or step.id,
                                   kind="station", attrs=attrs))
-                edges.append(Edge(from_id=prev_id, to_id=step.id, attrs=dict(pending)))
+                edges.append(Edge(from_id=prev_id, to_id=step.id, attrs=edge_attrs(pending)))
                 pending = {}
                 prev_id = step.id
             elif step.kind is StepKind.TRANSPORT:
@@ -157,6 +166,6 @@ class ProcessModel:
                 pending["wip"] = pending.get("wip", 0) + step.wip
 
         nodes.append(Node(id="__sink__", name="Shipping", kind="sink"))
-        edges.append(Edge(from_id=prev_id, to_id="__sink__", attrs=dict(pending)))
+        edges.append(Edge(from_id=prev_id, to_id="__sink__", attrs=edge_attrs(pending)))
 
         return Scene(nodes=nodes, edges=edges, meta={"name": self.name})
