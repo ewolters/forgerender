@@ -98,3 +98,59 @@ def test_to_scene_returns_a_serializable_forgecore_scene():
     scene = _line().to_scene()
     assert isinstance(scene, Scene)
     json.dumps(scene.to_dict())  # round-trips through JSON
+
+
+# --- multi-product routing --------------------------------------------------
+
+def _network() -> ProcessModel:
+    # Two products share the cut->weld leg; only B continues to paint.
+    return ProcessModel(
+        name="Two-Product Cell",
+        steps=[
+            Step(id="cut", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=40)),
+            Step(id="t1", kind=StepKind.TRANSPORT, distance_m=10, transport_time_s=15),
+            Step(id="weld", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=90)),
+            Step(id="t2", kind=StepKind.TRANSPORT, distance_m=5, transport_time_s=8),
+            Step(id="paint", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=60)),
+        ],
+        products=[
+            Product(id="A", demand_per_day=100, route=["cut", "t1", "weld"]),
+            Product(id="B", demand_per_day=60, route=["cut", "t1", "weld", "t2", "paint"]),
+        ],
+    )
+
+
+def test_stations_are_a_shared_pool_across_products():
+    scene = _network().to_scene()
+    stations = [n.id for n in scene.nodes if n.kind == "station"]
+    assert stations == ["cut", "weld", "paint"]  # each emitted once
+
+
+def test_shared_edge_sums_trip_count_across_products():
+    scene = _network().to_scene()
+    # both A (100) and B (60) traverse cut -> weld
+    edge = next(e for e in scene.edges if e.from_id == "cut" and e.to_id == "weld")
+    assert edge.attrs["frequency"] == 160
+    assert edge.attrs["distance_m"] == 10  # physical distance, not summed
+
+
+def test_divergent_edge_carries_only_its_products_trips():
+    scene = _network().to_scene()
+    # only B (60) continues weld -> paint
+    edge = next(e for e in scene.edges if e.from_id == "weld" and e.to_id == "paint")
+    assert edge.attrs["frequency"] == 60
+
+
+def test_empty_route_visits_all_steps_in_order():
+    # a product with no explicit route falls back to the declared step order
+    model = ProcessModel(
+        steps=[
+            Step(id="cut", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=40)),
+            Step(id="t1", kind=StepKind.TRANSPORT, distance_m=7),
+            Step(id="weld", kind=StepKind.PROCESSING, operation=Operation(cycle_time_s=90)),
+        ],
+        products=[Product(id="A", demand_per_day=50)],
+    )
+    scene = model.to_scene()
+    edge = next(e for e in scene.edges if e.from_id == "cut" and e.to_id == "weld")
+    assert edge.attrs["frequency"] == 50

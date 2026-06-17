@@ -89,6 +89,7 @@ class Product:
     id: str
     name: str = ""
     demand_per_day: float = 0.0
+    route: list[str] = field(default_factory=list)  # ordered step ids; empty = all steps in order
 
 
 @dataclass
@@ -118,54 +119,69 @@ class ProcessModel:
 
     def to_scene(self) -> Scene:
         """Generate the runnable Scene: a source boundary, the operations as
-        station nodes carrying canonical attrs, the transport/delay phenomena
-        folded onto the connecting edges, and a sink boundary."""
+        shared station nodes carrying canonical attrs, the transport/delay
+        phenomena folded onto the connecting edges, and a sink boundary.
+
+        Each product walks its own route (an ordered list of step ids; empty =
+        all steps in declared order). Edges merge by (from, to): physical
+        phenomena are single-valued, the trip-count sums the demand of every
+        product that traverses the edge — movement-waste is demand x routing."""
         nodes: list[Node] = []
-        edges: list[Edge] = []
 
         demand = self.total_demand_per_day()
         interarrival = self.available_s_per_day / demand if demand > 0 else 0.0
         nodes.append(Node(id="__source__", name="Customer Demand", kind="source",
                           attrs={"interarrival_time": interarrival}))
 
-        prev_id = "__source__"
-        pending: dict = {}  # transport/delay phenomena accumulating onto the next edge
-
-        def edge_attrs(p: dict) -> dict:
-            # A transport edge carries a trip-count: in a single route every unit
-            # traverses it once, so trips/day == demand. Movement-waste (the motion
-            # layer) is frequency x distance; without this it renders zero.
-            attrs = dict(p)
-            if attrs.get("distance_m", 0.0) > 0:
-                attrs["frequency"] = demand
-            return attrs
-
+        # Stations are a shared pool — each operation step becomes one node,
+        # however many products route through it.
+        step_by_id = {s.id: s for s in self.steps}
         for step in self.steps:
             if step.kind in _OPERATION_KINDS:
                 op = step.operation or Operation()
-                attrs = {
-                    "step_kind": step.kind.value,
-                    "cycle_time": op.cycle_time_s,
-                    "cycle_time_cv": op.cycle_time_cv,
-                    "changeover_time": op.setup_time_s,
-                    "scrap_rate": op.scrap_fraction,
-                    "mtbf": op.mtbf_s,
-                    "mttr": op.mttr_s,
-                    "operators": op.capacity,
-                }
-                nodes.append(Node(id=step.id, name=step.name or step.id,
-                                  kind="station", attrs=attrs))
-                edges.append(Edge(from_id=prev_id, to_id=step.id, attrs=edge_attrs(pending)))
-                pending = {}
-                prev_id = step.id
-            elif step.kind is StepKind.TRANSPORT:
-                pending["transport_time_s"] = pending.get("transport_time_s", 0.0) + step.transport_time_s
-                pending["distance_m"] = pending.get("distance_m", 0.0) + step.distance_m
-            elif step.kind is StepKind.DELAY:
-                pending["delay_s"] = pending.get("delay_s", 0.0) + step.delay_s
-                pending["wip"] = pending.get("wip", 0) + step.wip
-
+                nodes.append(Node(
+                    id=step.id, name=step.name or step.id, kind="station",
+                    attrs={
+                        "step_kind": step.kind.value,
+                        "cycle_time": op.cycle_time_s,
+                        "cycle_time_cv": op.cycle_time_cv,
+                        "changeover_time": op.setup_time_s,
+                        "scrap_rate": op.scrap_fraction,
+                        "mtbf": op.mtbf_s,
+                        "mttr": op.mttr_s,
+                        "operators": op.capacity,
+                    },
+                ))
         nodes.append(Node(id="__sink__", name="Shipping", kind="sink"))
-        edges.append(Edge(from_id=prev_id, to_id="__sink__", attrs=edge_attrs(pending)))
+
+        edges_by_pair: dict = {}
+
+        def add_edge(from_id: str, to_id: str, pending: dict, pdemand: float) -> None:
+            slot = edges_by_pair.setdefault((from_id, to_id), {})
+            for k in ("transport_time_s", "distance_m", "delay_s", "wip"):
+                if k in pending:
+                    slot[k] = pending[k]
+            if pending.get("distance_m", 0.0) > 0:
+                slot["frequency"] = slot.get("frequency", 0) + pdemand
+
+        routes = [(p.demand_per_day,
+                   [step_by_id[sid] for sid in p.route] if p.route else self.steps)
+                  for p in self.products] or [(0.0, self.steps)]
+
+        for pdemand, route_steps in routes:
+            prev_id, pending = "__source__", {}
+            for step in route_steps:
+                if step.kind in _OPERATION_KINDS:
+                    add_edge(prev_id, step.id, pending, pdemand)
+                    prev_id, pending = step.id, {}
+                elif step.kind is StepKind.TRANSPORT:
+                    pending["transport_time_s"] = pending.get("transport_time_s", 0.0) + step.transport_time_s
+                    pending["distance_m"] = pending.get("distance_m", 0.0) + step.distance_m
+                elif step.kind is StepKind.DELAY:
+                    pending["delay_s"] = pending.get("delay_s", 0.0) + step.delay_s
+                    pending["wip"] = pending.get("wip", 0) + step.wip
+            add_edge(prev_id, "__sink__", pending, pdemand)
+
+        edges = [Edge(from_id=f, to_id=t, attrs=a) for (f, t), a in edges_by_pair.items()]
 
         return Scene(nodes=nodes, edges=edges, meta={"name": self.name})
