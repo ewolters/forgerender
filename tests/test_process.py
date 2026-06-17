@@ -8,7 +8,7 @@ so no downstream layer reinterprets them.
 
 import json
 
-from forgecore import Operation, ProcessModel, Product, Scene, Step, StepKind
+from forgecore import Operation, ProcessModel, Product, Resource, Scene, Step, StepKind
 
 
 def _line() -> ProcessModel:
@@ -139,6 +139,18 @@ def test_divergent_edge_carries_only_its_products_trips():
     # only B (60) continues weld -> paint
     edge = next(e for e in scene.edges if e.from_id == "weld" and e.to_id == "paint")
     assert edge.attrs["frequency"] == 60
+
+
+def test_operation_resource_and_pool_reach_the_scene():
+    model = ProcessModel(
+        steps=[Step(id="cut", kind=StepKind.PROCESSING,
+                    operation=Operation(cycle_time_s=40, resource="ops"))],
+        products=[Product(id="A", demand_per_day=100)],
+        resources=[Resource(id="ops", name="Operators", count=2)],
+    )
+    scene = model.to_scene()
+    assert scene.node("cut").attrs["resource"] == "ops"
+    assert scene.meta["resources"] == {"ops": 2}
 
 
 def test_empty_route_visits_all_steps_in_order():

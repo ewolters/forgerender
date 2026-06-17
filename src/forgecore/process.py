@@ -150,6 +150,7 @@ class ProcessModel:
                         "mtbf": op.mtbf_s,
                         "mttr": op.mttr_s,
                         "operators": op.capacity,
+                        "resource": op.resource,
                     },
                 ))
         nodes.append(Node(id="__sink__", name="Shipping", kind="sink"))
@@ -184,4 +185,7 @@ class ProcessModel:
 
         edges = [Edge(from_id=f, to_id=t, attrs=a) for (f, t), a in edges_by_pair.items()]
 
-        return Scene(nodes=nodes, edges=edges, meta={"name": self.name})
+        meta = {"name": self.name}
+        if self.resources:  # shared pools: id -> token count
+            meta["resources"] = {r.id: r.count for r in self.resources}
+        return Scene(nodes=nodes, edges=edges, meta=meta)
